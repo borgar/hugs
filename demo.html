@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  
+  <style type="text/css" media="screen">
+    .odd { background : #eef; }
+  </style>
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js"></script>
+  <script src="hugs.js"></script>
+  
+  <script>jQuery(function($){
+
+    var o = {
+      name: "Template demo",
+      url: "http://borgar.net",
+      list: [ "One", "Two", "Three", "Four", "Five" ]
+    };
+
+    var tmpl = '<div>\n' + 
+               '<h1><a href="{{= url }}">{{= upper( name ) }}</a></h1>\n' +
+               '{{ if (list) }}' +
+               '<ol>\n' +
+               '{{ each( list ) }}' +
+               '<li class="{{= each.counter % 2 == 0 ? "odd" : "even" }}">' +
+               '{{= this }}' +
+               '</li>\n' +
+               '{{ end }}' +
+               '</ol>\n' +
+               '{{ end }}' +
+               '</div>';
+
+    var t = Template( tmpl );
+    $( '#one' ).html( t.render( o ) );
+
+    var actors = '<li style="background:{{= color }}">' + 
+                '<b>{{= name }}</b>\n' + 
+                '({{= nick }})\n' + 
+                '{{ if ( aka ) }}<em>AKA: {{= aka }}</em>\n{{ end }}' +
+                '</li>';
+
+    var ghosts = [
+      { name: "Shadow",  nick: "Blinky", color: 'red',  aka: "Cruise Elroy" },
+      { name: "Speedy",  nick: "Pinky",  color: 'pink' },
+      { name: "Bashful", nick: "Inky",   color: 'cyan' },
+      { name: "Pokey",   nick: "Clyde",  color: 'orange' }
+    ];
+      
+    var s = Template.render( actors, ghosts );
+    $( '#actors' ).append( $.map( s, function(m){ return $( m )[0]; } ) );
+
+  });</script>
+</head>
+<body class="">
+
+<div id="one"></div>
+<ul id="actors"></ul>
+
+</body>
+</html>
+
+

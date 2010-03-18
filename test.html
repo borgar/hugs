@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+  <meta charset=utf-8 />
+  <title>Hugs! test</title>
+
+  <!-- links to qunit + jquery -->
+  <link rel="stylesheet" href="http://github.com/jquery/qunit/raw/master/qunit/qunit.css" type="text/css" />
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js"></script>
+  <script src="http://github.com/jquery/qunit/raw/master/qunit/qunit.js"></script>
+
+  <script src="hugs.min.js"></script>
+
+<script>
+
+test("Way to few tests", function() {
+
+  //expect(2);
+
+  ok( Template, "Template is present" );
+  ok( jQuery.isFunction(Template), "Template is a function" );
+
+  var R = Template.render;
+  var O = { v: "test", arr: ["AA","BB","CC"] };
+  
+  same( R('{{= v }}',O), "test", "basic variable lookup" );
+
+  Template.INVALID = '';
+  same( R('{{= foo.bar }}'), '', "variable lookup error suppression" );
+
+  Template.INVALID = 'INVALID';
+  same( R('{{= foo.bar }}'), 'INVALID', "variable lookup error suppression string" );
+  //Template.INVALID = '';
+
+  same( R('name: {{= v }}', O), 'name: test', "variable and text" );
+
+  Template.tmpl['name'] = Template( "name: {{= v }}" );
+  same( R('name', O), 'name: test', "caching and including templates" );
+
+  same( R('{{ each arr }}{{= each.counter }}:{{= this }}/{{ end }}', O), '0:AA/1:BB/2:CC/', "loop" );
+  same( R('{{ each arr2 }}{{= each.counter }}:{{= this }}/{{ else }}ELSE{{ end }}', O), 'ELSE', "empty loop" );
+
+  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:true }), 'TRUE', "if:true" );
+  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:false }), 'FALSE', "if:false" );
+
+
+  var s = R( "Your {{ include 'name' }}!", O );
+  same( s, 'Your name: test!', "include tag" );
+
+  Template.tags.escape = {
+    handler: function () {
+      var contents = this.$TRUE.toString( this );  // render the internals
+      return contents.replace( /&/g, '&amp;' )
+            .replace( /"/g, '&quot;' ).replace( /'/g, '&apos;' )
+            .replace( /</g, '&lt;' ).replace( />/g, '&gt;' );
+    }
+  };
+  same( R( "{{ escape }}<b>HTML</b>{{ end }}", O ), "&lt;b&gt;HTML&lt;/b&gt;", 'Custom tag' );
+
+  Template.fn.br = function ( v ) { return ( v + '' ).replace( /\n/, '<br>' ); }
+  same( R( '{{= br( test ) }}', { test: 'waffles\njam' }), "waffles<br>jam", "Define a custom variable function" );
+
+
+  var s = '{{ each arr }}<tr class="{{ each.counter % 2 ? "odd" : "even" }}"><td>{{= name }}</td>{{ end }}';
+  try {
+    R( s, O );
+    throw new Error(); // error must be thrown
+  }
+  catch (x) {
+     ok( x instanceof Template.Error, "Invalid syntax {{tag.member}}" );
+  }
+  
+});
+
+
+</script>
+</head>
+<body>
+ <h1 id="qunit-header">Hugs!</h1>
+ <h2 id="qunit-banner"></h2>
+ <h2 id="qunit-userAgent"></h2>
+ <ol id="qunit-tests"></ol>
+</body>
+</html>
