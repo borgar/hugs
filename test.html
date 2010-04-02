@@ -13,7 +13,9 @@
   <script src="hugs.min.js"></script>
 
 <script>
-
+QUnit.done = function () {
+  $('.fail ol').show();
+};
 test("Way to few tests", function() {
 
   //expect(2);
@@ -43,7 +45,14 @@ test("Way to few tests", function() {
 
   same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:true }), 'TRUE', "if:true" );
   same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:false }), 'FALSE', "if:false" );
-
+  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:null }), 'FALSE', "if:null" );
+  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:undefined }), 'FALSE', "if:undefined" );
+  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:{} }), 'TRUE', "if:[]" );
+  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:[] }), 'TRUE', "if:{}" );
+  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:"" }), 'FALSE', "if:''" );
+  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:"A" }), 'TRUE', "if:A" );
+  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:0 }), 'FALSE', "if:0" );
+  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:1 }), 'TRUE', "if:1" );
 
   var s = R( "Your {{ include 'name' }}!", O );
   same( s, 'Your name: test!', "include tag" );
