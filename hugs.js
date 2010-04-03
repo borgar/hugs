@@ -8,8 +8,8 @@
  */
 /*global window */
 /*jslint evil: true, forin: true, laxbreak: true */
-(function(){
-
+(function(W){
+  
   function map ( a, fn ) {
     var r = [];
     for (var i=0,l=a.length; i<l; i++) {
@@ -25,14 +25,24 @@
     return a;
   }
 
+  function type ( o ) {
+    var s = Object.prototype.toString.call( o );
+    return s.substring( 8, s.length -1 ).toLowerCase();
+  }
+
   function Template ( str ) {
     if ( str in Template.tmpl ) { return Template.tmpl[ str ]; }
     // allow omitting the new operator
-    if ( this === window ) { return new Template( str ); }
-    this.nodes = this.parse( str );
+    // would test with this===window but MSIE seems to fail this across multi domain script includes?
+    if ( this instanceof Template ) {
+      this.nodes = this.parse( str );
+    }
+    else {
+      return new Template( str );
+    }
   }
   
-  var T = window.Template = Template;
+  var T = W.Template = Template;
   
   T.prototype = {
 
@@ -41,7 +51,7 @@
     // * returns a rendered template based on the context, or a list of same if input was an list. 
     render: function ( context ) {
 
-      if ( Object.prototype.toString.call(context) === "[object Array]" ) {
+      if ( type( context ) === "array" ) {
         var self = this;
         return map( context, function ( item ) {
           return self.nodes.toString( item );
@@ -56,16 +66,32 @@
     // * returns a tree of Nodelists
     parse: function ( tokens, until ) {
 
-      // TODO: don't match tags within strings: {{= "}}" }}
-      if ( typeof tokens === 'string' ) {
-        tokens = tokens.split( /(\{[\{#].*?[\}#]\})/g );
+      // tokenizer
+      if ( type( tokens ) === 'string' ) {
+        // remove comments
+        var a = tokens.replace( /\{#("(\"|[^"])*?"|'(\'|[^'])*?'|[\S\s])*?#\}/g, '' );
+        tokens = [];
+        while ( a.length ) {
+          var t = a.match( /^([\S\s]*?)(\{\{("(\"|[^"])*?"|'(\'|[^'])*?'|.)*?\}\})/ );
+          if ( t ) {
+            if ( t[1] ) { // discard empty strings
+              tokens.push( t[1] );
+            }
+            tokens.push( t[2] );
+            a = a.substr( t[0].length );
+          }
+          else {
+            tokens.push( a );
+            a = '';
+          }
+        }
       }
 
       var nodes = [];
       while ( tokens.length ) {
 
         var token = tokens.shift(),
-            m = token.match( /(\{[\{#])\s*((\=|\w+).*?)\s*[\}#]\}/ );
+            m = token.match( /^(\{[\{#])\s*((\=|\w+).*?)\s*[\}#]\}$/ );
 
         // block tag
         if ( m && m[1] === '{{' ) { 
@@ -120,9 +146,6 @@
           }
         }
 
-        // comment
-        else if (  m && m[1] === '{#' ) { /* noop */  }
-
         // text
         else {
           nodes.push( token );
@@ -142,18 +165,20 @@
     },
 
     compile_variable: function ( v ) {
-      var cleaned = v.replace( /"(\"|[^"])*"|'(\'|[^'])*'|[!=]=+|[><]=/g, '!!!' );
+      var cleaned = v.replace( /"(\"|[^"])*?"|'(\'|[^'])*?'|[!=]=+|[><]=/g, '' );
       // disallow: {}, (=, +=, -=, *=, /=, >>=, <<=, >>>=, &=, |=, ^=), (++, --)
       if ( /(^\s*\.|\.\s*$|\+\+|\-\-|[gls]et|new|[{}=])/.test( cleaned ) ) {
         throw new T.Error( 'Illegal template operator "' + RegExp.lastMatch + '" in ' + v );
       }
+      // this can probably be cut down further by ignoring the reserved words and just having the function constructor complain about them
+      // is checking for "import" and "abstract" really needed?
       else if ( /(abstract|b(oolean|reak|yte)|c(a(se|tch)|har|lass|on(st|tinue))|d(e(bugger|fault|lete)|o(uble)?)|e(lse|num|x(port|tends))|f(inal(ly)?|loat|or|unction)|goto|i(mp(lements|ort)|n(stanceof|t(erface)?)|f)|long|n(ative|ew)|p(ackage|r(ivate|otected)|ublic)|return|s(hort|tatic|uper|witch|ynchronized)|t(hrows?|r(ansient|y))|v(ar|olatile)|w(hile|ith)|yeild)/.test( cleaned ) ) {
         throw new T.Error( 'Illegal reserved word "' + RegExp.lastMatch + '" in ' + v );
       }
       return new Function( '', 'try{with(this){with(Template.vars){with(Template.fn){' + 
-        'return [' + v + '];' + 
-        '}}}}catch(e){if(Template.SILENT && e instanceof ReferenceError){return '+
-        '[Template.INVALID];}throw e;}' );
+        'return [' + v + '];}}}}catch(e){'+
+        'if(Template.SILENT && (e instanceof ReferenceError || e instanceof TypeError)){' + 
+        'return [Template.INVALID];}throw e;}' );
     }
 
 
@@ -177,13 +202,16 @@
 
       // variable nodes are converted to echo block nodes
       '=': {
-        handler: function ( v ) { return v; },
+        handler: function ( v ) {
+          // TODO: escape all output here
+          return v;
+        },
         single: true
       },
 
       'if': {
         handler: function ( v ) {
-          return ( v ? this.$TRUE : this.$FALSE ).toString( this );
+          return ( v ? this.$TRUE : this.$FALSE ) + '';//.toString( this );
         }
       },
 
@@ -194,8 +222,8 @@
         handler: function ( v ) {
           var t = this.$TRUE,
               V = T.vars;
-          if ( !v || !v.length || typeof v === "string" ) {
-            return this.$FALSE.toString( this );
+          if ( !v || !v.length || type(v) === "string" ) {
+            return this.$FALSE + '';//.toString( this );
           }
           var r = map( v, function ( item, i ) {
             V.each = {
@@ -214,7 +242,7 @@
         handler: function ( v ) {
           return ( v in T.tmpl ) 
               ? T.render( v, this ) 
-              : this.$FALSE.toString( this )
+              : this.$FALSE + ''  //.toString( this )
               ;
         },
         single: true
@@ -270,6 +298,7 @@
     toString: function ( data ) {
       // make sure firebug and other debuggers don't choke on this
       if ( !arguments.length ) { return '<Template Node>'; }
+      // This is arguably the messyest thing in the system and needs a lot more thought:
       data = data || {};
       var r = this.resolve.call( data );
       data.$TRUE  = this.$TRUE;
@@ -278,7 +307,10 @@
       if ( !tag ) {
         throw new T.Error( 'The "' + this.tag + '" tag is missing a handler function' );
       } 
-      return ( r.length === 1 ) ? tag.call( data, r[0] ) : tag.apply( data, r );
+      return ( r.length === 1 ) 
+          ? tag.call( data, r[0] )
+          : tag.apply( data, r )
+          ;
     }
 
   };
@@ -297,4 +329,4 @@
     return j.join('');
   };
 
-}());
+}(window));
