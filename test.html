@@ -10,32 +10,44 @@
   <script src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js"></script>
   <script src="http://github.com/jquery/qunit/raw/master/qunit/qunit.js"></script>
 
-  <script src="hugs.min.js"></script>
+  <script src="hugs.js?1"></script>
 
 <script>
 QUnit.done = function () {
   $('.fail ol').show();
 };
 test("Way to few tests", function() {
-
-  //expect(2);
-
-  ok( Template, "Template is present" );
-  ok( jQuery.isFunction(Template), "Template is a function" );
-
   var R = Template.render;
   var O = { v: "test", arr: ["AA","BB","CC"] };
   
+  //expect(2);
+  ok( Template, "Template is present" );
+  ok( jQuery.isFunction(Template), "Template is a function" );
+
+  same( R('A{# comments test #}B',O), "AB", "comments are removed" );
+  same( R('A{# comments "#}" test #}B',O), "AB", "comments may include string of comments" );
+  same( R('A{# comments "str\"ing" test #}B',O), "AB", "comments may include strings with escapes (double)" );
+  same( R("A{# comments 'str\'ing' test #}B",O), "AB", "comments may include strings with escapes (single)" );
+  same( R("A{# {{= v }} #}B",O), "AB", "comments may include tags" );
+  same( R("A{# \ncomments test\n #}B",O), "AB", "comments may span lines" );
+  
   same( R('{{= v }}',O), "test", "basic variable lookup" );
+  same( R('{{= "string" }}',O), "string", "basic string output (double)" );
+  same( R("{{= 'string' }}",O), "string", "basic string output (single)" );
+  same( R('{{= "str\\"ing" }}',O), "str\"ing", "string escapes (double)" );
+  same( R("{{= 'str\\'ing' }}",O), "str\'ing", "string escapes (single)" );
+  same( R('{{= "{{ tag }}" }}',O), "{{ tag }}", "string output with tag" );
+  same( R('{{= "}}" }}',O), "}}", "string output with end of tag" );
+
 
   Template.INVALID = '';
   same( R('{{= foo.bar }}'), '', "variable lookup error suppression" );
-
   Template.INVALID = 'INVALID';
   same( R('{{= foo.bar }}'), 'INVALID', "variable lookup error suppression string" );
-  //Template.INVALID = '';
 
-  same( R('name: {{= v }}', O), 'name: test', "variable and text" );
+  same( R('A{{= v }}', O), 'Atest', "variable and text (1)" );
+  same( R('{{= v }}B', O), 'testB', "variable and text (2)" );
+  same( R('A{{= v }}B', O), 'AtestB', "variable and text (3)" );
 
   Template.tmpl['name'] = Template( "name: {{= v }}" );
   same( R('name', O), 'name: test', "caching and including templates" );
@@ -79,7 +91,7 @@ test("Way to few tests", function() {
   catch (x) {
      ok( x instanceof Template.Error, "Invalid syntax {{tag.member}}" );
   }
-  
+
 });
 
 
