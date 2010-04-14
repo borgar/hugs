@@ -9,92 +9,279 @@
   <link rel="stylesheet" href="http://github.com/jquery/qunit/raw/master/qunit/qunit.css" type="text/css" />
   <script src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.min.js"></script>
   <script src="http://github.com/jquery/qunit/raw/master/qunit/qunit.js"></script>
-
   <script src="hugs.js?1"></script>
-
 <script>
-QUnit.done = function () {
-  $('.fail ol').show();
+//QUnit.done = function () { $('.fail ol').show(); };
+
+var O = {
+    one: "first",
+    two: "second",
+    arr: ["AA","BB","CC"],
+    fun: function () {
+      return 'RETURNED';
+    }
 };
-test("Way to few tests", function() {
-  var R = Template.render;
-  var O = { v: "test", arr: ["AA","BB","CC"] };
-  
-  //expect(2);
-  ok( Template, "Template is present" );
+var R = function ( tmpl, data ) {
+  var r;
+  try {
+    r = Template.render( tmpl, data || {} );
+  }
+  catch ( e ) {
+    if ( typeof e === 'string' ) {
+      r = 'ERROR: ' + e;
+    }
+    r = e;
+  }
+  finally {
+    return r;
+  }
+};
+
+
+function test_handler( test_name, res, exp ) {
+  //var is_err = exp === Template.Error || ($.isFunction(exp) && /^[A-Z][a-z]+Error/i.test( exp.name + '' ));
+  var is_err = exp === Template.Error || ($.isFunction(exp) && exp.prototype instanceof Error);
+  if ( is_err && res instanceof exp ) {
+    ok( res instanceof exp, test_name );
+  }
+  else {
+    same( res, exp, test_name );
+  }
+}
+
+// these are used throughout to test if tag blocks suppress them
+Template.tags.syntax_error    = { handler: function(){ throw SyntaxError('test syntax error'); }, single:true };
+Template.tags.reference_error = { handler: function(){ throw ReferenceError('test reference error'); }, single:true };
+Template.tags.type_error      = { handler: function(){ throw TypeError('test type error'); }, single:true };
+
+test("Basics", function() {
+
   ok( jQuery.isFunction(Template), "Template is a function" );
 
-  same( R('A{# comments test #}B',O), "AB", "comments are removed" );
-  same( R('A{# comments "#}" test #}B',O), "AB", "comments may include string of comments" );
-  same( R('A{# comments "str\"ing" test #}B',O), "AB", "comments may include strings with escapes (double)" );
-  same( R("A{# comments 'str\'ing' test #}B",O), "AB", "comments may include strings with escapes (single)" );
-  same( R("A{# {{= v }} #}B",O), "AB", "comments may include tags" );
-  same( R("A{# \ncomments test\n #}B",O), "AB", "comments may span lines" );
+  test_handler( 'plain text passes through untouched', R('lorem ipsum',O), 'lorem ipsum' );
+
+  test_handler( 'whitespace is left untouched', R('\n\tlorem\n\n\tipsum \t',O), '\n\tlorem\n\n\tipsum \t' );
+
+  // throw errors with incomplete syntax
+  test_handler('empty tag',  R("{{}}"), '{{}}' );
   
-  same( R('{{= v }}',O), "test", "basic variable lookup" );
-  same( R('{{= "string" }}',O), "string", "basic string output (double)" );
-  same( R("{{= 'string' }}",O), "string", "basic string output (single)" );
-  same( R('{{= "str\\"ing" }}',O), "str\"ing", "string escapes (double)" );
-  same( R("{{= 'str\\'ing' }}",O), "str\'ing", "string escapes (single)" );
-  same( R('{{= "{{ tag }}" }}',O), "{{ tag }}", "string output with tag" );
-  same( R('{{= "}}" }}',O), "}}", "string output with end of tag" );
+  test_handler( 'empty tag (with whitespace)', R("{{ }}"), '{{ }}' );
+  test_handler( 'empty tag (with tabs whitespace)', R("{{\t\t}}"), '{{\t\t}}' );
 
+  // tags should be able to {{ url }}
+  test_handler( 'empty variable tag (with tabs whitespace)', R("{{=\t\t}}"), '' );
+  test_handler( 'empty variable tag', R("{{= }}"), '' );
+  test_handler( 'empty variable tag (with space)', R("{{=}}"), '' );
+  test_handler( 'multi word variable tag', R("{{= a b c }}"), Template.Error );
 
-  Template.INVALID = '';
-  same( R('{{= foo.bar }}'), '', "variable lookup error suppression" );
-  Template.INVALID = 'INVALID';
-  same( R('{{= foo.bar }}'), 'INVALID', "variable lookup error suppression string" );
+  // since all tags are terminated by end it's not really possible to have incorrect nestiong
+  test_handler( 'unmatched block tag', R("{{ if 1 }}{{ if 1 }}{{ end }}",O), Template.Error );
+  test_handler( 'unmatched end tag', R("{{ if 1 }}{{ end }}{{ end }}",O), Template.Error );
 
-  same( R('A{{= v }}', O), 'Atest', "variable and text (1)" );
-  same( R('{{= v }}B', O), 'testB', "variable and text (2)" );
-  same( R('A{{= v }}B', O), 'AtestB', "variable and text (3)" );
+  test_handler( 'tag matching (missing bracket)', R("a {{ one } b",O), 'a {{ one } b' );
+  test_handler( 'tag matching (non-greedy)', R("{{= one }}} {{ two }",O), 'first} {{ two }' );
 
-  Template.tmpl['name'] = Template( "name: {{= v }}" );
-  same( R('name', O), 'name: test', "caching and including templates" );
+  // newlines should work because: {{= foo + "\n" }}
+  // and they have whitespace management benefits
+  test_handler( "newlines do not kill tags", R('{{\n= \none\n }}',O), 'first');
+  test_handler( "newlines in strings don't kill tags", R('{{= "on\ne" }}',O), 'on\ne' );
+  test_handler( "returns do not kill tags", R('{{\r= \r\none\r\n }}',O), 'first');
+  test_handler( "returns in strings don't kill tags", R('{{= "on\re" }}',O), 'on\re' );
+  test_handler( "slashes in strings don't kill tags", R('{{= "on\\e" }}',O), 'on\\e');
 
-  same( R('{{ each arr }}{{= each.counter }}:{{= this }}/{{ end }}', O), '0:AA/1:BB/2:CC/', "loop" );
-  same( R('{{ each arr2 }}{{= each.counter }}:{{= this }}/{{ else }}ELSE{{ end }}', O), 'ELSE', "empty loop" );
+  // comments with tags   // and /* .. */
 
-  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:true }), 'TRUE', "if:true" );
-  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:false }), 'FALSE', "if:false" );
-  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:null }), 'FALSE', "if:null" );
-  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:undefined }), 'FALSE', "if:undefined" );
-  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:{} }), 'TRUE', "if:[]" );
-  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:[] }), 'TRUE', "if:{}" );
-  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:"" }), 'FALSE', "if:''" );
-  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:"A" }), 'TRUE', "if:A" );
-  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:0 }), 'FALSE', "if:0" );
-  same( R('{{ if a }}TRUE{{ else }}FALSE{{ end }}', { a:1 }), 'TRUE', "if:1" );
+  // TODO: test confirms that `this` is the data object
+  // test_handler( "`this` on empty object is (probably) window", R('{{= this }}'), window.toString() );
 
-  var s = R( "Your {{ include 'name' }}!", O );
-  same( s, 'Your name: test!', "include tag" );
+  jQuery.getText = function ( str ) { return str.toUpperCase(); };
+  Template.tags.trans = { handler: function ( v ) { return jQuery.getText( v ); }, single:true };
+  test_handler( "creating new tags works", R('{{trans "translate" }}', {}), 'TRANSLATE' );
 
-  Template.tags.escape = {
-    handler: function () {
-      var contents = this.$TRUE.toString( this );  // render the internals
-      return contents.replace( /&/g, '&amp;' )
-            .replace( /"/g, '&quot;' ).replace( /'/g, '&apos;' )
-            .replace( /</g, '&lt;' ).replace( />/g, '&gt;' );
-    }
-  };
-  same( R( "{{ escape }}<b>HTML</b>{{ end }}", O ), "&lt;b&gt;HTML&lt;/b&gt;", 'Custom tag' );
+  test_handler( "$ cannot be used by data", R('{{= $ }}', {'$':'foo'}), 'foo' );
+  test_handler( "_ can by used by data", R('{{= _ }}', {'_':'foo'}), 'foo' );
+  Template.tags['_'] = Template.tags['trans'];
+  test_handler( "_ can by assigned a tag", R('{{_ "translate" }}', {}), 'TRANSLATE' );
 
-  Template.fn.br = function ( v ) { return ( v + '' ).replace( /\n/, '<br>' ); }
-  same( R( '{{= br( test ) }}', { test: 'waffles\njam' }), "waffles<br>jam", "Define a custom variable function" );
+  // javascript operations
+  test_handler( "JS: string concatination", R('{{= one + "foo" }}',O), "firstfoo" );
+  test_handler( "JS: adding", R('{{= 1 + 5 }}',O), "6" );
+  test_handler( "JS: subtracting", R('{{= 9 - 5 }}',O), "4" );
+  test_handler( "JS: modulo", R('{{= 5 % 2 }}',O), "1" );
+  test_handler( "JS: unary minus", R('{{= -n }}',{n:10}), "-10" );
+  test_handler( "JS: unary plus", R('{{= (+n)+8 }}',{n:"10"}), "18" );
 
+  test_handler( "JS: in operator", R('{{= "bar" in foo }}',{foo:{bar:'baz'}}), "true" );
+  test_handler( "JS: instanceof operator", R('{{= foo instanceof Date }}',{foo:new Date()}), "true" );
+  test_handler( "JS: typeof operator", R('{{= typeof "str" }}',{}), "string" );
 
-  var s = '{{ each arr }}<tr class="{{ each.counter % 2 ? "odd" : "even" }}"><td>{{= name }}</td>{{ end }}';
-  try {
-    R( s, O );
-    throw new Error(); // error must be thrown
-  }
-  catch (x) {
-     ok( x instanceof Template.Error, "Invalid syntax {{tag.member}}" );
-  }
+  // TODO: regular expressions ?
+
+  test_handler( "JS: bitwise AND", R('{{= n & 1 }}',{n:5}), "1" );
+  test_handler( "JS: bitwise OR", R('{{= n | 1 }}',{n:4}), "5" );
+  test_handler( "JS: bitwise XOR", R('{{= n ^ 1 }}',{n:5}), "4" );
+  test_handler( "JS: bitwise NOT", R('{{= ~n }}',{n:5}), "-6" );
+  test_handler( "JS: left shift", R('{{= n << 1 }}',{n:5}), "10" );
+  test_handler( "JS: right shift", R('{{= n >> 1 }}',{n:5}), "2" );
+  test_handler( "JS: zero-fill right shift", R('{{= n >>> 1 }}',{n:5}), "2" );
+
+  test_handler( "JS: comparing ==", R('{{= 1 == 5 }}',O), "false" );
+  test_handler( "JS: comparing !=", R('{{= 1 != 5 }}',O), "true" );
+  test_handler( "JS: comparing ===", R('{{= 5 === 5 }}',O), "true" );
+  test_handler( "JS: comparing !==", R('{{= 5 !== 5 }}',O), "false" );
+  test_handler( "JS: comparing >=", R('{{= 1 >= 5 }}',O), "false" );
+  test_handler( "JS: comparing >", R('{{= 1 > 5 }}',O), "false" );
+  test_handler( "JS: comparing <=", R('{{= 1 <= 5 }}',O), "true" );
+  test_handler( "JS: comparing <", R('{{= 1 < 5 }}',O), "true" );
+  test_handler( "JS: Logical OR", R('{{= zero || "FALSY" }}',{ zero: 0 }), "FALSY" );
+  test_handler( "JS: Logical AND", R('{{= zero && "TRUEY" }}',{ zero: 1 }), "TRUEY" );
+  test_handler( "JS: Conditional Operator", R('{{= zero ? "zero" : "other" }}',{ zero: 1 }), "zero" );
+  test_handler( "JS: Unary logical NOT", R('{{= !zero }}',{ zero: 1 }), "false" );
+
+  test_handler( "bracketed accessors work", R('{{= foo["bar"] }}',{foo:{bar:'baz'}}), 'baz' );
+  test_handler( "bracketed accessors work (single string)", R("{{= foo['bar'] }}",{foo:{bar:'baz'}}), 'baz' );
+
+  // illegal operators 
+  test_handler( "Disallow incremental assignment", R('{{= a += 1 }}',O), Template.Error );
+  test_handler( "Disallow decremental assignment", R('{{= a -= 1 }}',O), Template.Error );
+  test_handler( "Disallow multiply assignment", R('{{= a *= 1 }}',O), Template.Error );
+  test_handler( "Disallow division assignment", R('{{= a /= 1 }}',O), Template.Error );
+  test_handler( "Disallow left shift assignment", R('{{= a <<= 1 }}',O), Template.Error );
+  test_handler( "Disallow right shift assignment", R('{{= a >>= 1 }}',O), Template.Error );
+  test_handler( "Disallow zero-fill right shift assignment", R('{{= a >>>= 1 }}',O), Template.Error );
+  test_handler( "Disallow bitwise AND assignment", R('{{= a &= 1 }}',O), Template.Error );
+  test_handler( "Disallow bitwise OR assignment", R('{{= a |= 1 }}',O), Template.Error );
+  test_handler( "Disallow bitwise XOR assignment", R('{{= a ^= 1 }}',O), Template.Error );
+
+  test_handler( "Disallow literal object creation", R('{{= { a:"a"} }}',O), Template.Error );
+  test_handler( "Disallow literal array creation", R('{{= [1,2,3] }}',O), Template.Error );
+
+  test_handler( "Disallow decrement", R('{{= --a }}',{a:1}), Template.Error );
+  test_handler( "Disallow assignments", R('{{= (a = 2) }}',{a:1}), Template.Error );
+
+  // reserved words
+  test_handler( "Disallow new operator", R('{{= new Object() }}'), Template.Error );
+  test_handler( "Disallow delete operator", R('{{= delete a }}',{a:1}), Template.Error );
+  test_handler( "Disallow function operator", R('{{= function(){} }}'), Template.Error );
+  test_handler( "Disallow return", R('{{= return a }}',{a:1}), Template.Error );
+  test_handler( "Disallow for", R('{{= for a }}',{a:1}), Template.Error );
+  test_handler( "Disallow do/while", R('{{= do{ a }while(a) }}',{a:1}), Template.Error );
+  test_handler( "Disallow if", R('{{= if a }}',{a:1}), Template.Error );
+  test_handler( "Disallow try/catch", R('{{= try{b.s}catch(e){} }}',{a:1}), Template.Error );
+  test_handler( "Disallow return keyword", R('{{= return a }}',{a:1}), Template.Error );
+  test_handler( "Disallow with keyword", R('{{= with (s) }}',{a:1}), Template.Error );
+  test_handler( "Disallow throw keyword", R('{{= throw "foo" }}',{a:1}), Template.Error );
+
+  // test errors are passed back correctly
+  test_handler( 'errors are passed back correctly (syntax)', R("{{ syntax_error }}",O), SyntaxError );
+  test_handler( 'errors are passed back correctly (reference)', R("{{ reference_error }}",O), ReferenceError );
+  test_handler( 'errors are passed back correctly (type)', R("{{ type_error }}",O), TypeError );
 
 });
+test("Comments", function() {
 
+  test_handler( "comments are removed", R('A{# comments test #}B',O), "AB" );
+  test_handler( "comments may include string of comments", R('A{# comments "#}" test #}B',O), "AB" );
+  test_handler( "comments cannot nest other comments", R('A{# C{# E #}D #}B',O), "AD #}B" );
+  test_handler( "comments may include strings with escapes (double)", R('A{# comments "str\"ing" test #}B',O), "AB" );
+  test_handler( "comments may include strings with escapes (single)", R("A{# comments 'str\'ing' test #}B",O), "AB" );
+  test_handler( "comments may include tags", R("A{# {{= v }} #}B",O), "AB" );
+  test_handler( "comments may span lines", R("A{# \ncomments test\n #}B",O), "AB" );
 
+});
+test("Variables", function() {
+
+  test_handler( "variable replacement", R('{{= one }}',O), "first" );
+  test_handler(  "many variables work", R('{{= one }}/{{= two }}',O), "first/second" );
+
+  test_handler( "basic string output (double)", R('{{= "string" }}',O), "string" );
+  test_handler( "basic string output (single)", R("{{= 'string' }}",O), "string" );
+  test_handler( "string quote escapes (double)", R('{{= "str\\"i\\"ng" }}',O), 'str"i"ng' );
+  test_handler( "string quote escapes (single)", R("{{= 'str\\'i\\'ng' }}",O), "str'i'ng" );
+
+  test_handler( "string output with tag", R('{{= "{{ tag }}" }}',O), "{{ tag }}" );
+  test_handler( "string output with end of tag", R('{{= "}}" }}',O), "}}" );
+
+  test_handler( "variable lookup error suppression", R('{{= is_undefined }}', O), '' );
+  test_handler( "variable lookup error suppression (with member)", R('{{= is_undefined.member }}', O), '' );
+  // jQuery.tmpl.ERROR_STRING = "ILLEGAL"
+  // test_handler( "variable lookup error suppression string", R('{{= foo.bar }}'), 'INVALID' );
+
+  test_handler( "falsy values are correctly rendered (0)", R('{{= 0 }}'), '0' );
+  test_handler( "falsy values are correctly rendered (false)", R('{{= false }}'), 'false' );
+  test_handler( "falsy values are correctly rendered (null)", R('{{= zero }}'), '' );  // it's debatable what we want here
+  test_handler( "falsy values are correctly rendered (undefined)", R('{{= undefined }}'), '' );
+  test_handler( "falsy values are correctly rendered (\"\")", R('{{= "" }}'), '' );
+  test_handler( "falsy values are correctly rendered ('')", R("{{= '' }}"), '' );
+
+  test_handler( "falsy lookups are correctly rendered (false)", R('{{= zero }}', {zero:0}), '0' );
+  test_handler( "falsy lookups are correctly rendered (false)", R('{{= zero }}', {zero:false}), 'false' );
+  test_handler( "falsy lookups are correctly rendered (null)", R('{{= zero }}', {zero:null}), '' ); // it's debatable what we want here
+  test_handler( "falsy lookups are correctly rendered (undefined)", R('{{= zero }}', {zero:undefined}), '' );
+  test_handler( "falsy lookups are correctly rendered ('')", R('{{= zero }}', {zero:""}), '' );
+  
+  test_handler( "variable and text (1)", R('A{{= one }}', O), 'Afirst' );
+  test_handler( "variable and text (2)", R('{{= one }}B', O), 'firstB' );
+  test_handler( "variable and text (3)", R('A{{= one }}B', O), 'AfirstB' );
+
+  test_handler( "lookups work for submembers", R('{{= a.b.c }}', {a:{b:{c:"abc"}}}), 'abc' );
+  test_handler( "error suppression works for submembers", R('{{= a.b.c }}', {a:{b:{c:"abc"}}}), 'abc' );
+
+  test_handler( "functions can be called with in tags", R('{{= foo() }}', { foo:function(s){ return "bar"; }}), 'bar' );
+  test_handler( "functions pass strings correctly", R('{{= foo("bar") }}', { foo:function(s){ return s; }}), 'bar' );
+  test_handler( "functions pass arguments correctly", R('{{= foo(bar) }}', { foo:function(s){ return s; }, 'bar':'baz'}), 'baz' );
+
+  var cls = {
+    toString:function () {return 'S';},
+    toValue:function () {return 'V';}
+  }
+  test_handler( 'variables use toString, not toValue', R("{{= foo }}",{foo:cls}), 'S' );
+
+  //test_handler( 'comma passes variables correctly', R("{{= dot,dot,comma,dash }}",{dot:'.','comma':',','dash':'-'}), '-' );
+  // TODO: escaping
+
+});
+/*
+test("Caching", function() {
+
+  //jQuery.templates['name'] = jQuery.tmpl( "name: {{= v }}" );
+  //test_handler( "caching and including templates", R('name', O), 'name: test' );
+
+});
+*/
+test("Tag: each", function() {
+
+  test_handler( "loop", R('{{each arr}}{{= each.counter }}:{{= this }}/{{end each}}', O), '0:AA/1:BB/2:CC/' );
+  test_handler( "loop", R('{{ each arr }}{{= each.counter }}:{{= this }}/{{ end each }}', O), '0:AA/1:BB/2:CC/' );
+  test_handler( "empty loop", R('{{ each arr2 }}{{= each.counter }}:{{= this }}/{{ else }}ELSE{{ end }}', O), 'ELSE' );
+
+  test_handler( 'errors are passed back correctly (syntax)', R("{{each arr}}{{= $i }}{{ syntax_error }}{{end each}}",O), SyntaxError );
+  test_handler( 'errors are passed back correctly (reference)', R("{{each arr}}{{= $i }}{{ reference_error }}{{end each}}",O), ReferenceError );
+  test_handler( 'errors are passed back correctly (type)', R("{{each arr}}{{= $i }}{{ type_error }}{{end each}}",O), TypeError );
+
+});
+test("Tag: if", function() {
+
+  test_handler( "if:true", R('{{ if a }}TRUE{{ else }}FALSE{{ end if }}', { a:true }), 'TRUE' );
+  test_handler( "if:false", R('{{ if a }}TRUE{{ else }}FALSE{{ end if }}', { a:false }), 'FALSE' );
+  test_handler( "if:null", R('{{ if a }}TRUE{{ else }}FALSE{{ end if }}', { a:null }), 'FALSE' );
+  test_handler( "if:undefined", R('{{ if a }}TRUE{{ else }}FALSE{{ end if }}', { a:undefined }), 'FALSE' );
+  test_handler( "if:[]", R('{{ if a }}TRUE{{ else }}FALSE{{ end if }}', { a:{} }), 'TRUE' );
+  test_handler( "if:{}", R('{{ if a }}TRUE{{ else }}FALSE{{ end if }}', { a:[] }), 'TRUE' );
+  test_handler( "if:''", R('{{ if a }}TRUE{{ else }}FALSE{{ end if }}', { a:"" }), 'FALSE' );
+  test_handler( "if:A", R('{{ if a }}TRUE{{ else }}FALSE{{ end if }}', { a:"A" }), 'TRUE' );
+  test_handler( "if:0", R('{{ if a }}TRUE{{ else }}FALSE{{ end if }}', { a:0 }), 'FALSE' );
+  test_handler( "if:1", R('{{ if a }}TRUE{{ else }}FALSE{{ end if }}', { a:1 }), 'TRUE' );
+
+  // no parameters should return an undefined passed to the function and a falsy evaluation
+  test_handler( "if with no parameters", R('{{ if }}TRUE{{ else }}FALSE{{ end }}', { a:true }), 'FALSE' );
+  test_handler( "end if ignores following text", R('{{ if a }}TRUE{{ else }}FALSE{{ end if a }}', { a:1 }), 'TRUE' );
+
+  test_handler( 'errors are passed back correctly (syntax)', R("{{if true}}{{ syntax_error }}{{end}}",O), SyntaxError );
+  test_handler( 'errors are passed back correctly (reference)', R("{{if true}}{{ reference_error }}{{end}}",O), ReferenceError );
+  test_handler( 'errors are passed back correctly (type)', R("{{if true}}{{ type_error }}{{end}}",O), TypeError );
+
+});
 </script>
 </head>
 <body>

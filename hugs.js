@@ -51,7 +51,7 @@
     // * returns a rendered template based on the context, or a list of same if input was an list. 
     render: function ( context ) {
 
-      if ( type( context ) === "array" ) {
+      if ( type( context ) === 'array' ) {
         var self = this;
         return map( context, function ( item ) {
           return self.nodes.toString( item );
@@ -72,7 +72,7 @@
         var a = tokens.replace( /\{#("(\"|[^"])*?"|'(\'|[^'])*?'|[\S\s])*?#\}/g, '' );
         tokens = [];
         while ( a.length ) {
-          var t = a.match( /^([\S\s]*?)(\{\{("(\"|[^"])*?"|'(\'|[^'])*?'|.)*?\}\})/ );
+          var t = a.match( /^([\S\s]*?)(\{\{("(\"|[^"])*?"|'(\'|[^'])*?'|.)*?\}\})/m );
           if ( t ) {
             if ( t[1] ) { // discard empty strings
               tokens.push( t[1] );
@@ -87,21 +87,20 @@
         }
       }
 
+      // parser
       var nodes = [];
       while ( tokens.length ) {
 
         var token = tokens.shift(),
-            m = token.match( /^(\{[\{#])\s*((\=|\w+).*?)\s*[\}#]\}$/ );
+            m = token.match( /^(\{[\{#])\s*(\=|\w+)((?:(?:\"|[^"])*?"|'(?:\'|[^'])*?'|[\s\S])*?)\s*[\}#]\}$/ );
 
         // block tag
         if ( m && m[1] === '{{' ) { 
-
-          var tag = m[3],
-              args = m[2].substr( m[3].length );
+          var tag = m[2], args = m[3];
 
           if ( until && tag in until ) {
 
-            // put token back on token list so calling code knows why it terminated
+            // put token back o                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     n token list so calling code knows why it terminated
             tokens.unshift( tag );
             return new T.Nodelist( nodes );
 
@@ -109,7 +108,7 @@
           if ( T.tags[ tag ] ) {
 
             var block = new T.Node( tag, args );
-            block.resolve = this.compile_variable( args );
+            block.resolve = this.compile_variable( args, token );
 
             if ( !T.tags[ tag ].single ) {
 
@@ -164,23 +163,35 @@
       return new T.Nodelist( nodes );
     },
 
-    compile_variable: function ( v ) {
-      var cleaned = v.replace( /"(\"|[^"])*?"|'(\'|[^'])*?'|[!=]=+|[><]=/g, '' );
-      // disallow: {}, (=, +=, -=, *=, /=, >>=, <<=, >>>=, &=, |=, ^=), (++, --)
-      if ( /(^\s*\.|\.\s*$|\+\+|\-\-|[gls]et|new|[{}=])/.test( cleaned ) ) {
+    compile_variable: function ( v, tag ) {
+      // remove strings, equality operators, and bracket accessors
+      var cleaned = v.replace( /"(?:\\"|[^"])*?"|'(?:\\'|[^'])*?'|[!=]=+|([^<>])[><]=|\b\[/g, '$1' );
+      // disallow: {}, =, +=, -=, *=, /=, >>=, <<=, >>>=, &=, |=, ^=, ++, --
+      if ( /((<<|>?>>|[&\*\+-\/\^\|])?=|\+\+|--|\{|\}|\[)/.test( cleaned ) ) {
         throw new T.Error( 'Illegal template operator "' + RegExp.lastMatch + '" in ' + v );
       }
-      // this can probably be cut down further by ignoring the reserved words and just having the function constructor complain about them
-      // is checking for "import" and "abstract" really needed?
-      else if ( /(abstract|b(oolean|reak|yte)|c(a(se|tch)|har|lass|on(st|tinue))|d(e(bugger|fault|lete)|o(uble)?)|e(lse|num|x(port|tends))|f(inal(ly)?|loat|or|unction)|goto|i(mp(lements|ort)|n(stanceof|t(erface)?)|f)|long|n(ative|ew)|p(ackage|r(ivate|otected)|ublic)|return|s(hort|tatic|uper|witch|ynchronized)|t(hrows?|r(ansient|y))|v(ar|olatile)|w(hile|ith)|yeild)/.test( cleaned ) ) {
+      // disallow: break, case, catch, continue, default, delete, do, else, finally, for, function, if, new, return, switch, throw, try, var, void, while, with
+      else if ( /\b(break|(cas|els|continu|delet|whil)e|(ca|swi)tch|with|default|do|finally|try|for|var|function|return|if|new|throw|void)\b/.test( cleaned ) ) {
         throw new T.Error( 'Illegal reserved word "' + RegExp.lastMatch + '" in ' + v );
       }
-      return new Function( '', 'try{with(this){with(Template.vars){with(Template.fn){' + 
-        'return [' + v + '];}}}}catch(e){'+
-        'if(Template.SILENT && (e instanceof ReferenceError || e instanceof TypeError)){' + 
-        'return [Template.INVALID];}throw e;}' );
+      v = v.replace(/(")((?:\\"|[^"])*?)"|(')((?:\\'|[^'])*?)'/g, function ( a, b, c, d, e ) {
+        return (b||d) + (c || e || '').replace(/(\\(?!["'])|[\n\r\b\t])/g, function(a){
+          var h = a.charCodeAt( 0 ).toString( 16 );
+          return '\\u0000'.substring( 0, 6 - h.length ) + h;
+        }) + (b||d);
+      });
+      
+      try {
+        var f = 'try{with(this){with(Template.vars){with(Template.fn){' + 
+          'return [' + v + '];}}}}catch(e){'+
+          'if(Template.SILENT && (e instanceof ReferenceError || e instanceof TypeError)){' + 
+          'return [Template.INVALID];}throw e;}';
+        return new Function( '', f );
+      }
+      catch ( ex ) {
+        throw new T.Error( 'Evaluation error in tag "' + tag + '"' );
+      }
     }
-
 
   };
 
@@ -305,7 +316,7 @@
       data.$FALSE = this.$FALSE;
       var tag = T.tags[ this.tag ].handler;
       if ( !tag ) {
-        throw new T.Error( 'The "' + this.tag + '" tag is missing a handler function' );
+        throw new T.Error( 'The "' + this.tag + '" tag is missing a handler.' );
       } 
       return ( r.length === 1 ) 
           ? tag.call( data, r[0] )
@@ -319,7 +330,7 @@
     var j = [];
     for (var i=0,s; i<this.length; i++) {
       s = this[i].toString( data );
-      if ( s.join ) {
+      if ( s && s.join ) {
         j = j.concat( s );
       }
       else {
